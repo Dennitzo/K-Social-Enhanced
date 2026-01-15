@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "K-Social Enhanced",
+  "version": "0.1.1",
+  "description": "K-Social Enhanced",
+  "icons": {
+    "16": "icon16.png",
+    "32": "icon32.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "permissions": [
+    "storage",
+    "notifications",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://api-free.deepl.com/*",
+    "https://k-social.network/*"
+  ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://*/*"
+  ],
+  "action": {
+    "default_title": "K-Social Enhanced"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  }
+}

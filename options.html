@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>K-Social Enhanced – Settings</title>
+  <style>
+    body { font-family: sans-serif; max-width: 760px; margin: 28px auto; padding: 0 12px; }
+    h2 { margin-bottom: 8px; }
+    label { font-weight: 600; display: block; margin-top: 18px; }
+    input, textarea, select { width: 100%; margin-top: 8px; padding: 10px; font-size: 14px; box-sizing: border-box; }
+    .masked-input { -webkit-text-security: disc; }
+    .masked-input.show { -webkit-text-security: none; }
+    textarea { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .row { margin-top: 10px; }
+    button { margin-top: 18px; padding: 10px 16px; font-size: 14px; cursor: pointer; border: 1px solid #111; background: #fff; border-radius: 6px; }
+    .hint { font-size: 12px; color: #666; margin-top: 6px; }
+    .status { margin-top: 12px; }
+    .pill { display:inline-block; padding: 2px 8px; border-radius: 999px; background: #f1f1f1; margin-left: 6px; font-size: 12px; }
+    .log { margin-top: 8px; padding: 10px; border: 1px solid #ddd; border-radius: 6px; background: #fafafa; font-size: 12px; color: #666; white-space: pre-wrap; min-height: 120px; }
+    .button-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .button-row button { margin-top: 0; }
+  </style>
+</head>
+<body>
+  <h2>K-Social Enhanced – Settings <span class="pill">v1.2.0</span></h2>
+  <div class="hint">Clicking the extension icon always opens this page.</div>
+
+  <label for="apiKey">DeepL API Key (<a href="https://www.deepl.com/en/pro-api" target="_blank" rel="noopener noreferrer">https://www.deepl.com/en/pro-api</a>)</label>
+  <input id="apiKey" type="text" class="masked-input" name="deepl-api-key" placeholder="e.g. xxxx-xxxx-xxxx" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
+  <div class="hint">Stored locally.</div>
+  <div class="button-row">
+    <button id="toggleKey" type="button">Show key</button>
+  </div>
+
+  <label for="lang">Target language</label>
+  <select id="lang">
+    <option value="DE">German (DE)</option>
+    <option value="EN">English (EN)</option>
+    <option value="FR">French (FR)</option>
+    <option value="ES">Spanish (ES)</option>
+    <option value="IT">Italian (IT)</option>
+    <option value="NL">Dutch (NL)</option>
+    <option value="PL">Polish (PL)</option>
+  </select>
+
+  <label for="domains">Active domains (one per line, * allowed)</label>
+  <textarea id="domains" rows="5" spellcheck="false"></textarea>
+  <div class="hint">
+    Examples:<br/>
+    <code>https://k-social.network/*</code> (recommended)<br/>
+    Tip: If you enter <code>https://k-social.network/</code> then <code>*</code> is appended automatically. You will be prompted to grant access.
+  </div>
+
+  <label class="row">
+    <input type="checkbox" id="notificationsEnabled" />
+    System-wide notifications
+  </label>
+
+  <label class="row">
+    <input type="checkbox" id="tabTitleEnabled" />
+    Browser tab notification (renames the tab title)
+  </label>
+
+  <label class="row">
+    <input type="checkbox" id="bookmarksEnabled" />
+    Enable bookmarks
+  </label>
+
+  <label class="row">
+    <input type="checkbox" id="debugLogEnabled" />
+    Enable debug log (stores translation errors locally)
+  </label>
+
+  <label for="debugLog" id="debugLogLabel">Debug log</label>
+  <div id="debugLog" class="log" role="textbox" aria-readonly="true"></div>
+  <div class="hint" id="debugLogHint">Stored locally. Last 100 entries.</div>
+  <button id="clearLog" type="button">Clear log</button>
+
+  <div class="button-row">
+    <button id="save" type="button">Save</button>
+    <button id="clearCache" type="button">Clear cache</button>
+  </div>
+  <div id="status" class="status"></div>
+
+  <script src="options.js"></script>
+</body>
+</html>
