@@ -1642,6 +1642,14 @@
         scanForTransactionPopups(root);
       }
 
+      function restoreTransactionPopups() {
+        document.querySelectorAll("[data-ks-hidden-transaction-popup]").forEach((el) => {
+          if (!(el instanceof HTMLElement)) return;
+          el.style.display = "";
+          delete el.dataset.ksHiddenTransactionPopup;
+        });
+      }
+
       function setTransactionPopupHider(enabled) {
         if (!enabled) {
           if (transactionPopupObserver) {
@@ -1652,6 +1660,7 @@
             clearInterval(transactionPopupInterval);
             transactionPopupInterval = null;
           }
+          restoreTransactionPopups();
           return;
         }
         if (!transactionPopupObserver) {
