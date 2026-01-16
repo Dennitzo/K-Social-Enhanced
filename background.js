@@ -105,9 +105,13 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (msg && msg.type === "notify") {
     chrome.notifications.create({
       type: "basic",
-      iconUrl: chrome.runtime.getURL("icon.png"),
+      iconUrl: chrome.runtime.getURL("icon128.png"),
       title: "K-Social Enhanced",
       message: msg.text
+    }, () => {
+      if (chrome.runtime.lastError) {
+        console.error("Notification failed:", chrome.runtime.lastError.message);
+      }
     });
   }
 });
