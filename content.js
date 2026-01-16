@@ -123,6 +123,11 @@
     return location.pathname === "/profile" || location.pathname.startsWith("/profile/");
   }
 
+  function isUsersPage() {
+    return location.pathname === "/users" || location.pathname.startsWith("/users/");
+  }
+
+
   function escapeHtml(value) {
     return String(value)
       .replace(/&/g, "&amp;")
@@ -130,6 +135,39 @@
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
+  }
+
+  function linkifyText(value) {
+    const escaped = escapeHtml(value || "");
+    return escaped.replace(/(https?:\/\/[^\s<]+)/g, (match) => {
+      return `<a href="${match}" target="_blank" rel="noopener noreferrer" class="underline hover:underline">${match}</a>`;
+    });
+  }
+
+  function extractPostIdFromUrl(url) {
+    if (!url) return "";
+    const match = String(url).match(/\/post\/([a-f0-9]+)/i);
+    return match ? match[1] : "";
+  }
+
+  function navigateToUrl(url) {
+    const resolved = resolveHref(url);
+    if (!resolved) return false;
+    const anchor = document.createElement("a");
+    anchor.href = resolved;
+    anchor.rel = "noopener noreferrer";
+    anchor.style.display = "none";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => {
+      if (window.location.href === resolved) {
+        window.location.reload();
+      } else {
+        window.location.assign(resolved);
+      }
+    }, 50);
+    return true;
   }
 
   function stripTranslateLinkText(text) {
@@ -150,6 +188,24 @@
       })
       .join("\n");
     return cleaned.trim();
+  }
+
+  function findPostIdInCard(card, actionBar) {
+    const attrKeys = ["data-post-id", "data-id", "data-postid", "data-entry-id", "data-entryid"];
+    const findOnEl = (el) => {
+      if (!el) return "";
+      for (const key of attrKeys) {
+        const value = el.getAttribute(key);
+        if (value) return value;
+      }
+      return "";
+    };
+    let found = findOnEl(card);
+    if (!found && actionBar) found = findOnEl(actionBar);
+    if (found) return found;
+    const selector = attrKeys.map((key) => `[${key}]`).join(",");
+    const match = card.querySelector(selector);
+    return match ? findOnEl(match) : "";
   }
 
   function hashString(value) {
@@ -269,6 +325,7 @@
       let lastNonBookmarksPath = sessionStorage.getItem("ksBookmarksLastPath");
       let bookmarksSearch = "";
       let postSearchQuery = "";
+      let postUrlFetchInProgress = false;
 
       function bookmarkKeyFromFields(username, text) {
         const safeUser = (username || "Unknown").trim();
@@ -408,15 +465,21 @@
           if (!button) return false;
           return button.classList.contains(activeClass);
         };
-        const dataId =
-          card.getAttribute("data-post-id") ||
-          card.getAttribute("data-id") ||
-          card.dataset.postId ||
-          card.dataset.id ||
-          "";
+        const dataId = findPostIdInCard(card, actionBar);
+        const commentAnchor = actionBar ? actionBar.querySelector("svg.lucide-message-circle")?.closest("a[href]") : null;
+        const postAnchor = card.querySelector("a[href*='/post/'], a[href*='/posts/']");
+        let postUrl = commentAnchor ? (commentAnchor.getAttribute("href") || "") : "";
+        if (!postUrl && postAnchor) {
+          postUrl = postAnchor.getAttribute("href") || "";
+        }
+        if (!postUrl && dataId) {
+          postUrl = `/post/${dataId}`;
+        }
         const idSource = dataId || bookmarkKeyFromFields(username, text);
         return {
           id: hashString(idSource),
+          postId: dataId,
+          postUrl,
           username,
           time,
           text,
@@ -489,6 +552,17 @@
                 };
               }
             }
+            if (!enriched.postUrl) {
+              const postUrl = await fetchPostUrlFromCard(card);
+              if (postUrl) {
+                const postId = extractPostIdFromUrl(postUrl);
+                enriched = {
+                  ...enriched,
+                  postUrl,
+                  postId: enriched.postId || postId
+                };
+              }
+            }
             addBookmark(enriched, button);
           }
         });
@@ -549,6 +623,14 @@
             const candidate = buildBookmarkFromCard(card);
             const existing = byId.get(candidate.id);
             if (!existing) return;
+            if (!existing.postId && candidate.postId) {
+              existing.postId = candidate.postId;
+              changed = true;
+            }
+            if (!existing.postUrl && candidate.postUrl) {
+              existing.postUrl = candidate.postUrl;
+              changed = true;
+            }
             if (!existing.userId && candidate.userId) {
               existing.userId = candidate.userId;
               changed = true;
@@ -617,8 +699,71 @@
         return true;
       }
 
+      function waitForLocationChange(fromHref, timeoutMs = 1500) {
+        return new Promise((resolve) => {
+          const start = Date.now();
+          const tick = () => {
+            if (location.href !== fromHref) {
+              resolve(location.href);
+              return;
+            }
+            if (Date.now() - start > timeoutMs) {
+              resolve("");
+              return;
+            }
+            requestAnimationFrame(tick);
+          };
+          tick();
+        });
+      }
+
+      async function fetchPostUrlFromCard(card) {
+        if (postUrlFetchInProgress) return "";
+        const button = card.querySelector("svg.lucide-message-circle")?.closest("button");
+        if (!button) return "";
+        postUrlFetchInProgress = true;
+        const startUrl = location.href;
+        button.click();
+        const nextUrl = await waitForLocationChange(startUrl, 1500);
+        if (!nextUrl || nextUrl === startUrl) {
+          postUrlFetchInProgress = false;
+          return "";
+        }
+        const backButton = document.querySelector("button svg.lucide-arrow-left")?.closest("button");
+        if (backButton) {
+          backButton.click();
+        } else {
+          window.history.back();
+        }
+        setTimeout(() => {
+          if (location.href === nextUrl) {
+            window.history.back();
+          }
+        }, 500);
+        postUrlFetchInProgress = false;
+        return nextUrl;
+      }
+
+      function openPostFromCard(card) {
+        if (!card) return false;
+        card.click();
+        return true;
+      }
+
       function triggerBookmarkAction(bookmarkId, action, fallbackUrl) {
-        if (action === "comment") return false;
+        if (action === "comment") {
+          if (fallbackUrl) {
+            toggleBookmarksView(false);
+            return navigateToUrl(fallbackUrl);
+          }
+          const card = findPostCardByBookmarkId(bookmarkId);
+          if (card) {
+            toggleBookmarksView(false);
+            if (openPostFromCard(card)) return true;
+            if (triggerActionOnCard(card, action)) return true;
+          }
+          return false;
+        }
         const card = findPostCardByBookmarkId(bookmarkId);
         if (card && triggerActionOnCard(card, action)) return true;
         return false;
@@ -703,8 +848,10 @@
         }
 
         const itemsHtml = list.length
-          ? list.map((item) => `
-              <div class="border-b border-border sm:border-l sm:border-r p-3 sm:p-4 hover:bg-accent hover:bg-opacity-50 cursor-pointer transition-colors duration-200 bg-card" data-ks-bookmark-item="true" data-ks-bookmark-id="${escapeHtml(item.id)}" data-ks-bookmark-url="" data-ks-bookmark-text="${escapeHtml(`${(item.username || "").toLowerCase()} ${(item.text || "").toLowerCase()} ${(item.repostUsername || "").toLowerCase()} ${(item.repostText || "").toLowerCase()}`.trim())}">
+          ? list.map((item) => {
+              const postUrl = item.postUrl || (item.postId ? `/post/${item.postId}` : "");
+              return `
+              <div class="border-b border-border sm:border-l sm:border-r p-3 sm:p-4 hover:bg-accent hover:bg-opacity-50 cursor-pointer transition-colors duration-200 bg-card" data-ks-bookmark-item="true" data-ks-bookmark-id="${escapeHtml(item.id)}" data-ks-bookmark-url="${escapeHtml(postUrl)}" data-ks-bookmark-text="${escapeHtml(`${(item.username || "").toLowerCase()} ${(item.text || "").toLowerCase()} ${(item.repostUsername || "").toLowerCase()} ${(item.repostText || "").toLowerCase()}`.trim())}">
                 <div class="flex space-x-2 sm:space-x-3">
                   <span data-slot="avatar" class="relative flex size-8 shrink-0 overflow-hidden rounded-full h-10 w-10 flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity">
                     ${item.avatar ? `<img data-slot="avatar-image" class="aspect-square size-full" src="${escapeHtml(item.avatar)}" alt="">` : ""}
@@ -720,7 +867,7 @@
                       </div>
                       <span class="text-muted-foreground text-xs sm:text-sm flex-shrink-0 ml-2">${escapeHtml(item.time)}</span>
                     </div>
-                    <div class="mt-1 text-foreground text-base break-words whitespace-pre-wrap"><span>${escapeHtml(stripTranslateLinkText(item.text))}</span></div>
+                    <div class="mt-1 text-foreground text-base break-words whitespace-pre-wrap"><span>${linkifyText(stripTranslateLinkText(item.text))}</span></div>
                     ${
                       item.repostText || item.repostUsername || item.repostAvatar
                         ? `
@@ -738,7 +885,7 @@
                                         : `<span class="font-bold text-foreground text-sm truncate">${escapeHtml(item.repostUsername || "User")}</span>`
                                     }
                                   </div>
-                                  <div class="mt-1 text-foreground text-sm break-words whitespace-pre-wrap"><span>${escapeHtml(stripTranslateLinkText(item.repostText || ""))}</span></div>
+                                  <div class="mt-1 text-foreground text-sm break-words whitespace-pre-wrap"><span>${linkifyText(stripTranslateLinkText(item.repostText || ""))}</span></div>
                                 </div>
                               </div>
                             </div>
@@ -777,7 +924,8 @@
                   </div>
                 </div>
               </div>
-            `).join("")
+            `;
+            }).join("")
           : `<div class="p-4 text-muted-foreground">No bookmarks yet.</div>`;
 
         view.innerHTML = `
@@ -803,6 +951,14 @@
           scrollArea.style.webkitOverflowScrolling = "touch";
         }
         applyBookmarksFilter(view, bookmarksSearch);
+        view.querySelectorAll("a[href]").forEach((link) => {
+          link.addEventListener("click", (event) => {
+            event.stopPropagation();
+          });
+          link.addEventListener("pointerdown", (event) => {
+            event.stopPropagation();
+          });
+        });
         view.querySelectorAll("button[data-ks-bookmark-id]").forEach((button) => {
           button.addEventListener("click", (event) => {
             event.stopPropagation();
@@ -832,11 +988,66 @@
             }
           });
         });
+        const openBookmarkPost = (item) => {
+          const id = item.getAttribute("data-ks-bookmark-id") || "";
+          const url = item.getAttribute("data-ks-bookmark-url") || "";
+          if (url) {
+            toggleBookmarksView(false);
+            return navigateToUrl(url);
+          }
+          if (id) {
+            const card = findPostCardByBookmarkId(id);
+            if (card) {
+              toggleBookmarksView(false);
+              if (openPostFromCard(card)) return true;
+              if (triggerActionOnCard(card, "comment")) return true;
+            }
+          }
+          return false;
+        };
+
         view.querySelectorAll("[data-ks-bookmark-item]").forEach((item) => {
+          const navigateToPost = () => {
+            return openBookmarkPost(item);
+          };
+          const handleBodyClick = (event) => {
+            const targetEl = event.target instanceof Element ? event.target : null;
+            if (!targetEl) return;
+            if (targetEl.closest("a[href]")) return;
+            if (targetEl.closest("button")) return;
+            if (targetEl.closest(".mt-1.text-foreground.text-base, .mt-1.text-foreground.text-sm")) {
+              event.preventDefault();
+              event.stopImmediatePropagation();
+              navigateToPost();
+              return;
+            }
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          };
+          item.addEventListener("click", handleBodyClick, true);
+          item.addEventListener("pointerdown", handleBodyClick, true);
           const id = item.getAttribute("data-ks-bookmark-id");
           if (!id) return;
           syncBookmarkItemFromCard(id);
         });
+
+        const bodyGuard = (event) => {
+          const target = event.target instanceof Element ? event.target : null;
+          if (!target) return;
+          const item = target.closest("[data-ks-bookmark-item]");
+          if (!item) return;
+          if (target.closest("a[href]") || target.closest("button")) return;
+          if (target.closest(".mt-1.text-foreground.text-base, .mt-1.text-foreground.text-sm")) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            openBookmarkPost(item);
+            return;
+          }
+          event.preventDefault();
+          event.stopImmediatePropagation();
+        };
+        view.addEventListener("click", bodyGuard, true);
+        view.addEventListener("pointerdown", bodyGuard, true);
       }
 
       function toggleBookmarksView(show) {
@@ -918,15 +1129,18 @@
         const inBookmarks = view && view.style.display !== "none";
         if (inBookmarks && view) {
           bookmarksSearch = query;
-          applyBookmarksFilter(view, bookmarksSearch);
+          return;
+        }
+        if (!needle) {
+          document.querySelectorAll("[data-ks-search-hidden]").forEach((card) => {
+            if (!(card instanceof HTMLElement)) return;
+            card.style.display = "";
+            delete card.dataset.ksSearchHidden;
+          });
           return;
         }
         collectSearchCards().forEach((card) => {
           if (card.closest(`#${BOOKMARKS_VIEW_ID}`)) return;
-          if (!needle) {
-            card.style.display = "";
-            return;
-          }
           let haystack = card.dataset.ksSearchText;
           if (!haystack) {
             const username = (card.querySelector(USERNAME_SELECTOR)?.textContent || "").trim();
@@ -934,7 +1148,13 @@
             haystack = `${username} ${text}`.toLowerCase();
             card.dataset.ksSearchText = haystack;
           }
-          card.style.display = haystack.includes(needle) ? "" : "none";
+          if (haystack.includes(needle)) {
+            card.style.display = "";
+            delete card.dataset.ksSearchHidden;
+          } else {
+            card.style.display = "none";
+            card.dataset.ksSearchHidden = "true";
+          }
         });
       }
 
@@ -943,9 +1163,13 @@
         if (existing) existing.remove();
       }
 
-      function findHeaderRow() {
+      function findHeaderContainer() {
         const headers = Array.from(document.querySelectorAll("div.sticky.top-0.bg-background\\/80.backdrop-blur-md.border-b.border-border"));
-        const visibleHeader = headers.find((el) => el instanceof HTMLElement && el.offsetParent !== null) || headers[0];
+        return headers.find((el) => el instanceof HTMLElement && el.offsetParent !== null) || headers[0] || null;
+      }
+
+      function findHeaderRow() {
+        const visibleHeader = findHeaderContainer();
         if (visibleHeader) {
           const row = visibleHeader.querySelector("div.flex.items-center.space-x-4");
           if (row instanceof HTMLElement) return row;
@@ -957,20 +1181,29 @@
         return null;
       }
 
+      function isWatchingHeader(row) {
+        const heading = row.querySelector("h1.text-xl.font-bold");
+        return !!heading && (heading.textContent || "").trim().toLowerCase() === "watching";
+      }
+
       function ensureGlobalSearchBar() {
-        if (!cfg.searchbarEnabled || isSettingsPage() || isProfilePage()) {
+        if (!cfg.searchbarEnabled || isSettingsPage() || isProfilePage() || isUsersPage()) {
           removeGlobalSearchBar();
           applyPostSearchFilter("");
           return;
         }
         const headerRow = findHeaderRow();
-        if (!headerRow) return;
+        if (!headerRow || !isWatchingHeader(headerRow)) {
+          removeGlobalSearchBar();
+          applyPostSearchFilter("");
+          return;
+        }
+        const target = headerRow;
         const existing = document.getElementById(GLOBAL_SEARCH_ID);
-        if (existing && (existing.parentElement !== headerRow || headerRow.offsetParent === null)) {
+        if (existing && (existing.parentElement !== target || target.offsetParent === null)) {
           existing.remove();
         }
         if (document.getElementById(GLOBAL_SEARCH_ID)) {
-          applyPostSearchFilter(postSearchQuery);
           return;
         }
         const bar = document.createElement("div");
@@ -979,7 +1212,7 @@
         bar.innerHTML = `
           <input id="${GLOBAL_SEARCH_INPUT_ID}" type="text" placeholder="Search" class="file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 flex h-9 w-full min-w-0 rounded-md border bg-background px-3 py-1 shadow-xs transition-[color,box-shadow] outline-none file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive text-sm border-input-thin focus-visible:border-input-thin-focus focus-visible:ring-0">
         `;
-        headerRow.appendChild(bar);
+        target.appendChild(bar);
         const input = bar.querySelector(`#${GLOBAL_SEARCH_INPUT_ID}`);
         if (input instanceof HTMLInputElement) {
           input.value = postSearchQuery;
@@ -988,7 +1221,9 @@
             applyPostSearchFilter(postSearchQuery);
           });
         }
-        applyPostSearchFilter(postSearchQuery);
+        if (postSearchQuery.trim()) {
+          applyPostSearchFilter(postSearchQuery);
+        }
       }
 
       function openBookmarksPage(attempts = 5) {
@@ -1014,6 +1249,9 @@
 
       function navigateFromBookmarks() {
         toggleBookmarksView(false);
+        if (lastNonBookmarksPath) {
+          window.history.replaceState({}, "", lastNonBookmarksPath);
+        }
       }
 
       function bindBookmarksNavButton(button) {
