@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "K-Social Enhanced",
-  "version": "0.1.1",
-  "description": "K-Social Enhanced",
+  "version": "0.1.2",
+  "description": "Enhances K-Social with new functions like translation.",
   "icons": {
     "16": "icon16.png",
     "32": "icon32.png",

@@ -22,7 +22,7 @@
   </style>
 </head>
 <body>
-  <h2>K-Social Enhanced – Settings <span class="pill">v1.2.0</span></h2>
+  <h2>K-Social Enhanced – Settings <span class="pill" id="extVersion"></span></h2>
   <div class="hint">Clicking the extension icon always opens this page.</div>
 
   <label for="apiKey">DeepL API Key (<a href="https://www.deepl.com/en/pro-api" target="_blank" rel="noopener noreferrer">https://www.deepl.com/en/pro-api</a>)</label>
@@ -51,19 +51,24 @@
     Tip: If you enter <code>https://k-social.network/</code> then <code>*</code> is appended automatically. You will be prompted to grant access.
   </div>
 
+  <div class="hint">Notifications:</div>
+  <label class="row">
+    <input type="checkbox" id="tabTitleEnabled" />
+    Browser tab notification (renames the tab title)
+  </label>
   <label class="row">
     <input type="checkbox" id="notificationsEnabled" />
     System-wide notifications
   </label>
 
-  <label class="row">
-    <input type="checkbox" id="tabTitleEnabled" />
-    Browser tab notification (renames the tab title)
-  </label>
-
+  <div class="hint">Features:</div>
   <label class="row">
     <input type="checkbox" id="bookmarksEnabled" />
     Enable bookmarks
+  </label>
+  <label class="row">
+    <input type="checkbox" id="searchbarEnabled" />
+    Searchbar
   </label>
 
   <label class="row">
