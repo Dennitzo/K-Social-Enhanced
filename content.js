@@ -10,6 +10,8 @@
   const BOOKMARK_BUTTON_CLASS = "ks-bookmark-button";
   const BOOKMARKS_VIEW_ID = "ks-bookmarks-view";
   const BOOKMARKS_NAV_ID = "ks-nav-bookmarks";
+  const GLOBAL_SEARCH_ID = "ks-global-search";
+  const GLOBAL_SEARCH_INPUT_ID = "ks-global-search-input";
   const TURQUOISE_HOVER_STYLE_ID = "ks-theme-turquoise-hover";
   const TURQUOISE_LOGO_COLOR = "#70C7BA";
   const TURQUOISE_LOGO_ORIGINAL_ATTR = "data-ks-logo-original";
@@ -115,6 +117,10 @@
 
   function isSettingsPage() {
     return location.pathname === "/settings" || location.pathname.startsWith("/settings/");
+  }
+
+  function isProfilePage() {
+    return location.pathname === "/profile" || location.pathname.startsWith("/profile/");
   }
 
   function escapeHtml(value) {
@@ -243,6 +249,7 @@
       notificationsEnabled: false,
       tabTitleEnabled: true,
       bookmarksEnabled: true,
+      searchbarEnabled: false,
       hideTransactionPopup: false,
       turquoiseThemeEnabled: false,
       debugLogEnabled: false
@@ -261,6 +268,7 @@
       let bookmarksCache = [];
       let lastNonBookmarksPath = sessionStorage.getItem("ksBookmarksLastPath");
       let bookmarksSearch = "";
+      let postSearchQuery = "";
 
       function bookmarkKeyFromFields(username, text) {
         const safeUser = (username || "Unknown").trim();
@@ -662,6 +670,8 @@
         const host = getOrCreateBookmarksHost();
         if (!host) return;
 
+        bookmarksSearch = cfg.searchbarEnabled ? postSearchQuery : "";
+
         let view = document.getElementById(BOOKMARKS_VIEW_ID);
         if (!view) {
           view = document.createElement("div");
@@ -778,9 +788,6 @@
               </button>
               <h1 class="text-xl font-bold">Bookmarks</h1>
             </div>
-            <div class="mt-3">
-              <input id="ks-bookmarks-search" type="text" placeholder="Search bookmarks" class="file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 flex h-9 w-full min-w-0 rounded-md border bg-background px-3 py-1 shadow-xs transition-[color,box-shadow] outline-none file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive text-sm border-input-thin focus-visible:border-input-thin-focus focus-visible:ring-0" value="${escapeHtml(bookmarksSearch)}">
-            </div>
           </div>
           <div class="flex-1 min-h-0 overflow-y-scroll" style="scrollbar-width: none;">
             ${itemsHtml}
@@ -789,14 +796,6 @@
 
         const backButton = view.querySelector("#ks-bookmarks-back");
         backButton?.addEventListener("click", () => navigateFromBookmarks());
-        const searchInput = view.querySelector("#ks-bookmarks-search");
-        if (searchInput instanceof HTMLInputElement) {
-          searchInput.value = bookmarksSearch;
-          searchInput.addEventListener("input", () => {
-            bookmarksSearch = searchInput.value;
-            applyBookmarksFilter(view, bookmarksSearch);
-          });
-        }
         const scrollArea = view.querySelector(".overflow-y-scroll");
         if (scrollArea instanceof HTMLElement) {
           scrollArea.style.pointerEvents = "auto";
@@ -882,6 +881,13 @@
       }
 
       function applyBookmarksFilter(view, query) {
+        if (!cfg.searchbarEnabled) {
+          view.querySelectorAll("[data-ks-bookmark-item]").forEach((item) => {
+            if (!(item instanceof HTMLElement)) return;
+            item.style.display = "";
+          });
+          return;
+        }
         const needle = (query || "").trim().toLowerCase();
         view.querySelectorAll("[data-ks-bookmark-item]").forEach((item) => {
           if (!(item instanceof HTMLElement)) return;
@@ -892,6 +898,97 @@
           const text = item.getAttribute("data-ks-bookmark-text") || "";
           item.style.display = text.includes(needle) ? "" : "none";
         });
+      }
+
+      function collectSearchCards() {
+        const selectors = [
+          POST_CARD_SELECTOR,
+          "div.border-b.border-border.p-4.hover\\:bg-accent.hover\\:bg-opacity-50.cursor-pointer"
+        ];
+        const nodes = new Set();
+        selectors.forEach((selector) => {
+          document.querySelectorAll(selector).forEach((node) => nodes.add(node));
+        });
+        return Array.from(nodes).filter((node) => node instanceof HTMLElement);
+      }
+
+      function applyPostSearchFilter(query) {
+        const needle = (query || "").trim().toLowerCase();
+        const view = document.getElementById(BOOKMARKS_VIEW_ID);
+        const inBookmarks = view && view.style.display !== "none";
+        if (inBookmarks && view) {
+          bookmarksSearch = query;
+          applyBookmarksFilter(view, bookmarksSearch);
+          return;
+        }
+        collectSearchCards().forEach((card) => {
+          if (card.closest(`#${BOOKMARKS_VIEW_ID}`)) return;
+          if (!needle) {
+            card.style.display = "";
+            return;
+          }
+          let haystack = card.dataset.ksSearchText;
+          if (!haystack) {
+            const username = (card.querySelector(USERNAME_SELECTOR)?.textContent || "").trim();
+            const text = (card.textContent || "").trim();
+            haystack = `${username} ${text}`.toLowerCase();
+            card.dataset.ksSearchText = haystack;
+          }
+          card.style.display = haystack.includes(needle) ? "" : "none";
+        });
+      }
+
+      function removeGlobalSearchBar() {
+        const existing = document.getElementById(GLOBAL_SEARCH_ID);
+        if (existing) existing.remove();
+      }
+
+      function findHeaderRow() {
+        const headers = Array.from(document.querySelectorAll("div.sticky.top-0.bg-background\\/80.backdrop-blur-md.border-b.border-border"));
+        const visibleHeader = headers.find((el) => el instanceof HTMLElement && el.offsetParent !== null) || headers[0];
+        if (visibleHeader) {
+          const row = visibleHeader.querySelector("div.flex.items-center.space-x-4");
+          if (row instanceof HTMLElement) return row;
+        }
+        const heading = document.querySelector("h1.text-xl.font-bold");
+        if (heading && heading.parentElement instanceof HTMLElement) {
+          return heading.parentElement;
+        }
+        return null;
+      }
+
+      function ensureGlobalSearchBar() {
+        if (!cfg.searchbarEnabled || isSettingsPage() || isProfilePage()) {
+          removeGlobalSearchBar();
+          applyPostSearchFilter("");
+          return;
+        }
+        const headerRow = findHeaderRow();
+        if (!headerRow) return;
+        const existing = document.getElementById(GLOBAL_SEARCH_ID);
+        if (existing && (existing.parentElement !== headerRow || headerRow.offsetParent === null)) {
+          existing.remove();
+        }
+        if (document.getElementById(GLOBAL_SEARCH_ID)) {
+          applyPostSearchFilter(postSearchQuery);
+          return;
+        }
+        const bar = document.createElement("div");
+        bar.id = GLOBAL_SEARCH_ID;
+        bar.className = "ml-auto flex-1";
+        bar.innerHTML = `
+          <input id="${GLOBAL_SEARCH_INPUT_ID}" type="text" placeholder="Search" class="file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 flex h-9 w-full min-w-0 rounded-md border bg-background px-3 py-1 shadow-xs transition-[color,box-shadow] outline-none file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive text-sm border-input-thin focus-visible:border-input-thin-focus focus-visible:ring-0">
+        `;
+        headerRow.appendChild(bar);
+        const input = bar.querySelector(`#${GLOBAL_SEARCH_INPUT_ID}`);
+        if (input instanceof HTMLInputElement) {
+          input.value = postSearchQuery;
+          input.addEventListener("input", () => {
+            postSearchQuery = input.value;
+            applyPostSearchFilter(postSearchQuery);
+          });
+        }
+        applyPostSearchFilter(postSearchQuery);
       }
 
       function openBookmarksPage(attempts = 5) {
@@ -1099,6 +1196,8 @@
               </div>
               <div class="space-y-3 border border-border rounded-md p-4">
                 <div class="text-lg font-semibold text-foreground">Settings</div>
+
+                <div class="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notifications:</div>
                 <label class="flex items-center space-x-2 text-sm">
                   <input id="ks-tabTitleEnabled" type="checkbox" class="h-4 w-4" />
                   <span>Browser tab notification (renames tab title)</span>
@@ -1107,6 +1206,14 @@
                   <input id="ks-notificationsEnabled" type="checkbox" class="h-4 w-4" />
                   <span id="ks-notificationsLabel">System-wide notifications</span>
                 </label>
+
+                <div class="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Appearance:</div>
+                <label class="flex items-center space-x-2 text-sm">
+                  <input id="ks-turquoiseThemeEnabled" type="checkbox" class="h-4 w-4" />
+                  <span>Turquoise Kaspa Theme</span>
+                </label>
+
+                <div class="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Features:</div>
                 <label class="flex items-center space-x-2 text-sm">
                   <input id="ks-bookmarksEnabled" type="checkbox" class="h-4 w-4" />
                   <span>Enable bookmarks</span>
@@ -1116,9 +1223,10 @@
                   <span>Hide transaction popup</span>
                 </label>
                 <label class="flex items-center space-x-2 text-sm">
-                  <input id="ks-turquoiseThemeEnabled" type="checkbox" class="h-4 w-4" />
-                  <span>Turquoise Kaspa Theme</span>
+                  <input id="ks-searchbarEnabled" type="checkbox" class="h-4 w-4" />
+                  <span>Searchbar</span>
                 </label>
+
                 <label class="flex items-center space-x-2 text-sm">
                   <input id="ks-debugLogEnabled" type="checkbox" class="h-4 w-4" />
                   <span id="ks-debugLabel">Enable debug log</span>
@@ -1145,6 +1253,7 @@
         const notificationsEl = card.querySelector("#ks-notificationsEnabled");
         const tabTitleEnabledEl = card.querySelector("#ks-tabTitleEnabled");
         const bookmarksEnabledEl = card.querySelector("#ks-bookmarksEnabled");
+        const searchbarEnabledEl = card.querySelector("#ks-searchbarEnabled");
         const hideTransactionPopupEl = card.querySelector("#ks-hideTransactionPopup");
         const turquoiseThemeEnabledEl = card.querySelector("#ks-turquoiseThemeEnabled");
         const debugLogEnabledEl = card.querySelector("#ks-debugLogEnabled");
@@ -1173,6 +1282,7 @@
               notificationsEnabled: false,
               tabTitleEnabled: true,
               bookmarksEnabled: true,
+              searchbarEnabled: false,
               hideTransactionPopup: false,
               turquoiseThemeEnabled: false,
               debugLogEnabled: false,
@@ -1191,6 +1301,7 @@
               notificationsEl.checked = !!loaded.notificationsEnabled;
               tabTitleEnabledEl.checked = loaded.tabTitleEnabled !== false;
               bookmarksEnabledEl.checked = loaded.bookmarksEnabled !== false;
+              searchbarEnabledEl.checked = !!loaded.searchbarEnabled;
               hideTransactionPopupEl.checked = !!loaded.hideTransactionPopup;
               turquoiseThemeEnabledEl.checked = !!loaded.turquoiseThemeEnabled;
               debugLogEnabledEl.checked = !!loaded.debugLogEnabled;
@@ -1231,6 +1342,7 @@
             notificationsEnabled: notificationsEl.checked,
             tabTitleEnabled: tabTitleEnabledEl.checked,
             bookmarksEnabled: bookmarksEnabledEl.checked,
+            searchbarEnabled: searchbarEnabledEl.checked,
             hideTransactionPopup: hideTransactionPopupEl.checked,
             turquoiseThemeEnabled: turquoiseThemeEnabledEl.checked,
             debugLogEnabled: debugLogEnabledEl.checked
@@ -1298,6 +1410,9 @@
           }
           if (changes.bookmarksEnabled) {
             bookmarksEnabledEl.checked = changes.bookmarksEnabled.newValue !== false;
+          }
+          if (changes.searchbarEnabled) {
+            searchbarEnabledEl.checked = !!changes.searchbarEnabled.newValue;
           }
           if (changes.hideTransactionPopup) {
             hideTransactionPopupEl.checked = !!changes.hideTransactionPopup.newValue;
@@ -1718,9 +1833,11 @@
       new MutationObserver(() => {
         enhancePosts();
         enhanceBookmarks();
+        ensureGlobalSearchBar();
       }).observe(document.body, { childList: true, subtree: true });
       enhancePosts();
       enhanceBookmarks();
+      ensureGlobalSearchBar();
       setTransactionPopupHider(!!cfg.hideTransactionPopup);
       applyTurquoiseHoverTheme(!!cfg.turquoiseThemeEnabled);
       ensureTurquoiseLogoWatcher(!!cfg.turquoiseThemeEnabled);
@@ -1748,6 +1865,19 @@
           if (!cfg.bookmarksEnabled) {
             navigateFromBookmarks();
           }
+        }
+        if (changes.searchbarEnabled) {
+          cfg.searchbarEnabled = !!changes.searchbarEnabled.newValue;
+          if (!cfg.searchbarEnabled) {
+            postSearchQuery = "";
+            bookmarksSearch = "";
+          }
+          const view = document.getElementById(BOOKMARKS_VIEW_ID);
+          if (view && view.style.display !== "none") {
+            renderBookmarksView(bookmarksCache);
+            toggleBookmarksView(true);
+          }
+          ensureGlobalSearchBar();
         }
         if (changes.hideTransactionPopup) {
           cfg.hideTransactionPopup = !!changes.hideTransactionPopup.newValue;

@@ -5,6 +5,15 @@ const LOG_EMPTY_MESSAGE = "No entries.";
 const DEFAULT_DOMAINS = ["https://k-social.network/*", "http://localhost:5173/*"];
 let currentDomains = DEFAULT_DOMAINS.slice();
 
+function setVersionBadge() {
+  const badge = $("extVersion");
+  if (!badge) return;
+  const { version } = chrome.runtime.getManifest();
+  badge.textContent = `v${version}`;
+}
+
+setVersionBadge();
+
 function coerceDomainList(value, fallback) {
   if (Array.isArray(value)) return value;
   if (typeof value === "string") {
@@ -31,6 +40,7 @@ chrome.storage.local.get(
     notificationsEnabled: false,
     tabTitleEnabled: true,
     bookmarksEnabled: true,
+    searchbarEnabled: false,
     debugLogEnabled: false,
     debugLog: []
   },
@@ -47,6 +57,7 @@ chrome.storage.local.get(
     $("notificationsEnabled").checked = !!cfg.notificationsEnabled;
     $("tabTitleEnabled").checked = cfg.tabTitleEnabled !== false;
     $("bookmarksEnabled").checked = cfg.bookmarksEnabled !== false;
+    $("searchbarEnabled").checked = !!cfg.searchbarEnabled;
     $("debugLogEnabled").checked = !!cfg.debugLogEnabled;
     setLogVisibility(!!cfg.debugLogEnabled);
     renderLog(cfg.debugLog || []);
@@ -97,6 +108,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
   if (changes.bookmarksEnabled) {
     $("bookmarksEnabled").checked = changes.bookmarksEnabled.newValue !== false;
+  }
+  if (changes.searchbarEnabled) {
+    $("searchbarEnabled").checked = !!changes.searchbarEnabled.newValue;
   }
   if (changes.apiKey) {
     currentApiKey = changes.apiKey.newValue || "";
@@ -189,6 +203,7 @@ $("save").onclick = async () => {
     notificationsEnabled: $("notificationsEnabled").checked,
     tabTitleEnabled: $("tabTitleEnabled").checked,
     bookmarksEnabled: $("bookmarksEnabled").checked,
+    searchbarEnabled: $("searchbarEnabled").checked,
     debugLogEnabled: $("debugLogEnabled").checked
   };
 
